@@ -35,26 +35,23 @@ class _NowPlayingPageState extends State<NowPlayingPage>
   late AudioPlayerManager _audioPlayerManager;
   late int _selectedItemIndex;
   late Song _song;
-
+  late double _currentAnimationPosition;
 
   @override
   void initState() {
     super.initState();
+    _currentAnimationPosition = 0.0;
     _song = widget.playingSong;
     _imageAnimContronller = AnimationController(
-        vsync: this, duration: const Duration(microseconds: 12000));
-    _audioPlayerManager =
-        AudioPlayerManager(songUrl: _song.source);
+        vsync: this, duration: const Duration(seconds: 160));
+    _audioPlayerManager = AudioPlayerManager(songUrl: _song.source);
     _audioPlayerManager.init();
     _selectedItemIndex = widget.songs.indexOf(widget.playingSong);
   }
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery
-        .of(context)
-        .size
-        .width;
+    final screenWidth = MediaQuery.of(context).size.width;
     const delta = 64;
     final radius = (screenWidth - delta) / 2;
     return CupertinoPageScaffold(
@@ -81,7 +78,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
 
                 // Song image
                 RotationTransition(
-                  turns: Tween(begin: 0.0, end: 1.0)
+                  turns: Tween(begin: 0.0, end: 20.0)
                       .animate(_imageAnimContronller),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(radius),
@@ -111,48 +108,38 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                         IconButton(
                           onPressed: () {},
                           icon: const Icon(Icons.share_outlined),
-                          color: Theme
-                              .of(context)
-                              .colorScheme
-                              .primary,
+                          color: Theme.of(context).colorScheme.primary,
                         ),
                         Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Text(
                               _song.title,
-                              style: Theme
-                                  .of(context)
+                              style: Theme.of(context)
                                   .textTheme
                                   .bodyMedium!
                                   .copyWith(
-                                  color: Theme
-                                      .of(context)
-                                      .textTheme
-                                      .bodyMedium!
-                                      .color),
+                                      color: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium!
+                                          .color),
                             ),
                             const SizedBox(height: 8),
                             Text(_song.artist,
-                                style: Theme
-                                    .of(context)
+                                style: Theme.of(context)
                                     .textTheme
                                     .bodyMedium!
                                     .copyWith(
-                                    color: Theme
-                                        .of(context)
-                                        .textTheme
-                                        .bodyMedium!
-                                        .color)),
+                                        color: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium!
+                                            .color)),
                           ],
                         ),
                         IconButton(
                             onPressed: () {},
                             icon: const Icon(Icons.favorite_outline),
-                            color: Theme
-                                .of(context)
-                                .colorScheme
-                                .primary),
+                            color: Theme.of(context).colorScheme.primary),
                       ],
                     ),
                   ),
@@ -177,6 +164,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
   @override
   void dispose() {
     _audioPlayerManager.dispose();
+    _imageAnimContronller.dispose();
     super.dispose();
   }
 
@@ -196,7 +184,6 @@ class _NowPlayingPageState extends State<NowPlayingPage>
               color: Colors.deepPurple,
               size: 36),
           _playButton(),
-
           MediaButtonControl(
               function: _setNextSong,
               icon: Icons.skip_next,
@@ -240,6 +227,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
           final playing = playState?.playing;
           if (processingState == ProcessingState.loading ||
               processingState == ProcessingState.buffering) {
+            _pauseRotationAnim();
             return Container(
               margin: const EdgeInsets.all(8),
               width: 48,
@@ -250,17 +238,37 @@ class _NowPlayingPageState extends State<NowPlayingPage>
             return MediaButtonControl(
                 function: () {
                   _audioPlayerManager.player.play();
-                }, icon: Icons.play_arrow, color: Colors.deepPurple, size: 48);
+                  _imageAnimContronller.forward(
+                      from: _currentAnimationPosition);
+                  _imageAnimContronller.repeat();
+                },
+                icon: Icons.play_arrow,
+                color: Colors.deepPurple,
+                size: 48);
           } else if (processingState != ProcessingState.completed) {
+            _playRotationAnim();
             return MediaButtonControl(
                 function: () {
                   _audioPlayerManager.player.pause();
-                }, icon: Icons.pause, color: Colors.deepPurple, size: 48);
+                  _pauseRotationAnim();
+                },
+                icon: Icons.pause,
+                color: Colors.deepPurple,
+                size: 48);
           } else {
+            if (processingState == ProcessingState.completed) {
+              _stopRotationAnim();
+              _resetRotationAnim();
+            }
             return MediaButtonControl(
                 function: () {
                   _audioPlayerManager.player.seek(Duration.zero);
-                }, icon: Icons.replay, color: Colors.deepPurple, size: 48);
+                  _resetRotationAnim();
+                  _playRotationAnim();
+                },
+                icon: Icons.replay,
+                color: Colors.deepPurple,
+                size: 48);
           }
         });
   }
@@ -269,6 +277,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
     ++_selectedItemIndex;
     final nextSong = widget.songs[_selectedItemIndex];
     _audioPlayerManager.updateSongUrl(nextSong.source);
+    _resetRotationAnim();
     setState(() {
       _song = nextSong;
     });
@@ -278,14 +287,34 @@ class _NowPlayingPageState extends State<NowPlayingPage>
     --_selectedItemIndex;
     final prevSong = widget.songs[_selectedItemIndex];
     _audioPlayerManager.updateSongUrl(prevSong.source);
+    _resetRotationAnim();
     setState(() {
       _song = prevSong;
     });
   }
+
+  void _playRotationAnim() {
+    _imageAnimContronller.forward(from: _currentAnimationPosition);
+    _imageAnimContronller.repeat();
+  }
+
+  void _pauseRotationAnim() {
+    _stopRotationAnim();
+    _currentAnimationPosition = _imageAnimContronller.value;
+  }
+
+  void _stopRotationAnim() {
+    _imageAnimContronller.stop();
+  }
+
+  void _resetRotationAnim() {
+    _currentAnimationPosition = 0.0;
+    _imageAnimContronller.value = _currentAnimationPosition;
+  }
 }
 
 class MediaButtonControl extends StatefulWidget {
-  MediaButtonControl({
+  const MediaButtonControl({
     super.key,
     required this.function,
     required this.icon,
@@ -309,13 +338,7 @@ class _MediaButtonControlState extends State<MediaButtonControl> {
       onPressed: widget.function,
       icon: Icon(widget.icon),
       iconSize: widget.size,
-      color: widget.color ?? Theme
-          .of(context)
-          .colorScheme
-          .primary,
+      color: widget.color ?? Theme.of(context).colorScheme.primary,
     );
   }
 }
-
-
-
